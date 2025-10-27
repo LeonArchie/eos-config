@@ -1,15 +1,273 @@
 openapi: 3.0.0
 info:
   title: Configuration Management API
-  description: API для у
+  description: API для управления конфигурационными файлами и валидаторами
   version: 1.0.0
   contact:
-    name: Ответсвенный
+    name: Петунин Лев Михайлович
   license:
     name: AGPL-3.0-only WITH LICENSE-ADDITIONAL
 
 servers:
-  - url: http://app-service:5000
+  - url: http://app-config-service:9443
     description: Локальный сервер разработки (v1 API)
 
 paths:
+  /v1/config-create/{name}:
+    post:
+      tags:
+        - Config
+      summary: Создать новый конфигурационный файл
+      description: |
+        Принимает JSON в теле запроса и сохраняет его
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Имя конфигурационного файла (без расширения)
+          schema:
+            type: string
+          example: "app_settings"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              example:
+                key1: "value1"
+                key2: 123
+                nested:
+                  enabled: true
+      responses:
+        '201':
+          description: Конфигурационный файл успешно создан
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "success"
+                  message:
+                    type: string
+                    example: "Config app_settings.json created"
+        '400':
+          description: Неверный запрос (отсутствует JSON тело)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "No JSON data provided"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Error writing file"
+                    
+  /v1/read/{file_path}:
+    get:
+      tags:
+        - Config
+      summary: Прочитать параметр из конфигурационного файла
+      description: |
+        Читает значение параметра из JSON-файла в директории /configures.
+        Путь к параметру указывается через слэш после имени файла.
+      parameters:
+        - name: file_path
+          in: path
+          required: true
+          description: |
+            Путь в формате "имя_файла/путь_к_параметру".
+            Примеры:
+            - db/replication
+            - db/master_host
+            - app_settings/nested/enabled
+          schema:
+            type: string
+          example: "db/replication"
+      responses:
+        '200':
+          description: Успешное чтение параметра
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file:
+                    type: string
+                    example: "db.json"
+                    description: Имя файла конфигурации
+                  parameter:
+                    type: string
+                    example: "replication"
+                    description: Полный путь к параметру в файле
+                  value:
+                    type: 
+                      - string
+                      - number
+                      - boolean
+                      - object
+                      - array
+                    example: "false"
+                    description: Значение параметра
+        '400':
+          description: Неверный формат запроса
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Неверный формат запроса."
+        '404':
+          description: Файл или параметр не найден
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Параметр не найден"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Ошибка формата JSON"
+
+  /v1/update:
+    post:
+      tags:
+        - Configuration
+      summary: Обновление параметра в конфигурационном файле
+      description: |
+        Обновляет значение параметра в JSON-файле конфигурации.
+        Перед обновлением проверяет значение по regex-шаблону из валидатора (если существует).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                path:
+                  type: string
+                  example: "db/replication"
+                  description: Путь к параметру в формате `имя_файла/параметр1/параметр2`
+                value:
+                  type: string
+                  example: "false"
+                  description: Новое значение параметра
+              required:
+                - path
+                - value
+      responses:
+        '200':
+          description: Параметр успешно обновлен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "success"
+                  message:
+                    type: string
+                    example: "Параметр db/replication обновлен"
+                  file:
+                    type: string
+                    example: "db.json"
+                  parameter:
+                    type: string
+                    example: "db/replication"
+                  value:
+                    type: string
+                    example: "false"
+                  validation:
+                    type: string
+                    enum: ["performed", "skipped"]
+                    example: "performed"
+        '400':
+          description: Неверный запрос
+        '404':
+          description: Файл конфигурации или параметр не найден
+        '500':
+          description: Внутренняя ошибка сервера
+
+  /v1/create-validate/{name}:
+    post:
+      tags:
+        - Validators
+      summary: Создание файла-валидатора
+      description: Создает JSON-файл с regex-шаблонами для валидации параметров
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "db"
+          description: Имя валидатора (без расширения .json)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties:
+                type: string
+                description: Regex-шаблон для валидации параметра
+              example:
+                replication: "^(true|false)$"
+                master_host: "^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^$"
+      responses:
+        '201':
+          description: Валидатор успешно создан
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "success"
+                  message:
+                    type: string
+                    example: "Валидатор db.json создан"
+                  path:
+                    type: string
+                    example: "validators/db.json"
+        '400':
+          description: Неверный JSON или некорректные regex-шаблоны
+        '500':
+          description: Внутренняя ошибка сервера
+
+components:
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Описание ошибки"
+        details:
+          type: string
+          example: "Дополнительная информация об ошибке"
